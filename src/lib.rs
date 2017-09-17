@@ -248,23 +248,32 @@ fn _encode(input: &[u8]) -> Vec<u8> {
     let mut backup_pos: usize = 0;
     let mut it = input.iter();
 
+    let mut was_cr = false;
     while let Some(&byte) = it.next() {
-        if byte != b'\r' {
-            encode_byte(&mut result, byte, &mut on_line, &mut backup_pos);
-        } else {
-            if let Some(&byte) = it.next() {
-                if byte == b'\n' {
-                    result.push(b'\r');
-                    result.push(b'\n');
-                    on_line = 0;
-                    continue
-                }
-                append(&mut result, b"=0D", &mut on_line, &mut backup_pos);
-                encode_byte(&mut result, byte, &mut on_line, &mut backup_pos)
-            } else {
-                append(&mut result, b"=0D", &mut on_line, &mut backup_pos);
+        if was_cr {
+            if byte == b'\n' {
+                result.push(b'\r');
+                result.push(b'\n');
+                on_line = 0;
+                was_cr = false;
+                continue;
             }
+            // encode the CR ('\r') we skipped over before
+            append(&mut result, b"=0D", &mut on_line, &mut backup_pos);
         }
+        if byte == b'\r' {
+            // remember we had a CR ('\r') but do not encode it yet
+            was_cr = true;
+            continue;
+        } else {
+            was_cr = false;
+        }
+        encode_byte(&mut result, byte, &mut on_line, &mut backup_pos);
+    }
+
+    // we haven't yet encoded the last CR ('\r') so do it now
+    if was_cr {
+        append(&mut result, b"=0D", &mut on_line, &mut backup_pos);
     }
 
     result
@@ -423,6 +432,10 @@ mod tests {
                    encode_to_str("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u{0}Y"));
         assert_eq!("=0D=3D",
                    encode_to_str("\r="));
+
+        assert_eq!("a=0D\r\nb", encode_to_str("a\r\r\nb"));
+        assert_eq!("=0D", encode_to_str("\r"));
+        assert_eq!("=0D=0D", encode_to_str("\r\r"));
     }
 
     #[test]
